@@ -1,0 +1,627 @@
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
+
+/* ═══════════════════════════════════════════════════════════
+   TYPES & INTERFACES
+   ═══════════════════════════════════════════════════════════ */
+
+interface JointData {
+  J1: number;
+  J2: number;
+  J3: number;
+  J4: number;
+  J5: number;
+  J6: number;
+}
+
+interface PIDData {
+  setpoint: number;
+  error: number;
+  output: number;
+  p: number;
+  i: number;
+  d: number;
+}
+
+interface SensorData {
+  temp: number;
+  force: number;
+}
+
+interface HistoryEntry {
+  t: number;
+  sp: number;
+  out: number;
+  err: number;
+  p: number;
+  i: number;
+  d: number;
+}
+
+type LayoutMode = "mobile" | "tablet" | "compact" | "desktop";
+
+/* ═══════════════════════════════════════════════════════════
+   SIMULATED DATA ENGINE
+   ═══════════════════════════════════════════════════════════ */
+
+function useRobotData(activeJoint: keyof JointData) {
+  const [joints, setJoints] = useState<JointData>({ J1: 0, J2: 0, J3: 0, J4: 0, J5: 0, J6: 0 });
+  const [pid, setPid] = useState<PIDData>({ setpoint: 45, error: 0, output: 0, p: 0, i: 0, d: 0 });
+  const [sensors, setSensors] = useState<SensorData>({ temp: 28, force: 0 });
+  const [targetAngles, setTargetAngles] = useState<JointData>({ J1: 10, J2: 45, J3: -30, J4: 15, J5: 0, J6: 0 });
+
+  const targetsRef = useRef<JointData>(targetAngles);
+  const activeJRef = useRef<keyof JointData>(activeJoint);
+  const pidRef = useRef({ kp: 2, ki: 0.5, kd: 0.1 });
+  const intRef = useRef<number>(0);
+  const prevErr = useRef<number>(0);
+
+  useEffect(() => { targetsRef.current = targetAngles; }, [targetAngles]);
+  useEffect(() => { activeJRef.current = activeJoint; }, [activeJoint]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setJoints(prev => {
+        const next = { ...prev };
+        for (const k of Object.keys(prev) as Array<keyof JointData>) {
+          const t = targetsRef.current[k] ?? 0;
+          next[k] = +(prev[k] + 0.06 * (t - prev[k]) + (Math.random() - 0.5) * 0.2).toFixed(2);
+        }
+
+        const currentActive = activeJRef.current;
+        const sp = targetsRef.current[currentActive];
+        const m = next[currentActive];
+        const err = sp - m;
+        const { kp, ki, kd } = pidRef.current;
+
+        intRef.current = Math.max(-50, Math.min(50, intRef.current + err * 0.05));
+        const dE = (err - prevErr.current) / 0.05;
+        prevErr.current = err;
+
+        setPid({
+          setpoint: sp,
+          error: +err.toFixed(2),
+          output: +m.toFixed(2),
+          p: +(kp * err).toFixed(2),
+          i: +(ki * intRef.current).toFixed(2),
+          d: +(kd * dE).toFixed(2)
+        });
+
+        setSensors(s => ({
+          temp: +Math.max(20, Math.min(80, s.temp + (Math.random() - 0.48) * 0.15)).toFixed(1),
+          force: +Math.max(0, Math.min(20, s.force + (Math.random() - 0.5) * 0.3)).toFixed(1),
+        }));
+
+        return next;
+      });
+    }, 50);
+    return () => clearInterval(id);
+  }, []);
+
+  const setTarget = useCallback((j: keyof JointData, v: number) => { setTargetAngles(p => ({ ...p, [j]: v })); }, []);
+  const setParams = useCallback((p: Partial<{ kp: number; ki: number; kd: number }>) => {
+    pidRef.current = { ...pidRef.current, ...p };
+  }, []);
+
+  return { joints, pid, sensors, targetAngles, setTarget, setParams };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   COMPONENTS (TAILWIND STYLED)
+   ═══════════════════════════════════════════════════════════ */
+
+interface SensorGaugeProps {
+  label: string;
+  value: number | string;
+  unit: string;
+  pct: number;
+  colorClass: string;
+  bgClass: string;
+}
+
+function SensorGauge({ label, value, unit, pct, colorClass, bgClass }: SensorGaugeProps) {
+  return (
+    <div className="mb-3.5">
+      <div className="flex justify-between items-baseline mb-1.5">
+        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">{label}</span>
+        <span className={`text-xl font-bold font-sans tabular-nums ${colorClass}`}>
+          {value}<span className="text-[11px] font-normal text-slate-400 dark:text-slate-500 ml-0.5">{unit}</span>
+        </span>
+      </div>
+      <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-200 ${bgClass}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+interface ParamSliderProps {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  accentClass: string;
+}
+
+function ParamSlider({ label, value, onChange, min, max, step, accentClass }: ParamSliderProps) {
+  return (
+    <div className="flex items-center gap-3 mb-3">
+      <span className={`text-sm font-bold font-mono w-6 text-right ${accentClass}`}>{label}</span>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(+e.target.value)}
+        className={`flex-1 h-1.5 rounded-lg appearance-none cursor-pointer bg-slate-200 dark:bg-slate-700 accent-current ${accentClass}`}
+      />
+      <div className="flex items-center bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-lg px-2 py-1 w-16">
+        <input
+          type="number"
+          min={min} max={max} step={step}
+          value={value}
+          onChange={e => onChange(e.target.value === "" ? 0 : +e.target.value)}
+          className="w-full text-sm font-mono text-slate-600 dark:text-slate-300 bg-transparent border-none outline-none text-right appearance-none"
+        />
+      </div>
+    </div>
+  );
+}
+
+function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm dark:shadow-[0_1px_4px_rgba(0,0,0,0.4)] transition-colors overflow-hidden shrink-0 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function CardLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide mb-4 flex items-center gap-1.5">
+      {children}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CHARTS
+   ═══════════════════════════════════════════════════════════ */
+
+function ChartPID({ data }: { data: HistoryEntry[] }) {
+  const d = useMemo(() => data.slice(-80), [data]);
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={d} margin={{ top: 4, right: 6, left: -26, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+        <XAxis dataKey="t" tick={false} stroke="#e2e8f0" />
+        <YAxis stroke="#e2e8f0" tick={{ fill: "#9ca3af", fontSize: 9 }} />
+        <Tooltip contentStyle={{ background: "#ffffff", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "11px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }} />
+        <Line type="monotone" dataKey="sp" stroke="#10b981" strokeWidth={2} dot={false} name="Setpoint" isAnimationActive={false} />
+        <Line type="monotone" dataKey="out" stroke="#3b82f6" strokeWidth={1.5} dot={false} name="Output" isAnimationActive={false} />
+        <Line type="monotone" dataKey="err" stroke="#ef4444" strokeWidth={1} strokeDasharray="4 2" dot={false} name="Error" isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ChartTerms({ data }: { data: HistoryEntry[] }) {
+  const d = useMemo(() => data.slice(-80), [data]);
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={d} margin={{ top: 4, right: 6, left: -26, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+        <XAxis dataKey="t" tick={false} stroke="#e2e8f0" />
+        <YAxis stroke="#e2e8f0" tick={{ fill: "#9ca3af", fontSize: 9 }} />
+        <Tooltip contentStyle={{ background: "#ffffff", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "11px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }} />
+        <Area type="monotone" dataKey="p" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} name="P" isAnimationActive={false} />
+        <Area type="monotone" dataKey="i" stroke="#10b981" fill="#10b981" fillOpacity={0.2} name="I" isAnimationActive={false} />
+        <Area type="monotone" dataKey="d" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.2} name="D" isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN APP
+   ═══════════════════════════════════════════════════════════ */
+
+export default function Dashboard() {
+  const [activeJoint, setActiveJoint] = useState<keyof JointData>("J2");
+  const { pid, sensors, targetAngles, setTarget, setParams } = useRobotData(activeJoint);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [mobileTab, setMobileTab] = useState<"control" | "viewer" | "charts">("control");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("desktop");
+
+  const [kp, setKp] = useState<number>(2);
+  const [ki, setKi] = useState<number>(0.5);
+  const [kd, setKd] = useState<number>(0.1);
+  const [gripClosed, setGripClosed] = useState<boolean>(false);
+  const tick = useRef<number>(0);
+
+  const prevJointRef = useRef<keyof JointData>(activeJoint);
+  useEffect(() => {
+    if (prevJointRef.current !== activeJoint) {
+      setHistory([]);
+      prevJointRef.current = activeJoint;
+    }
+  }, [activeJoint]);
+
+  useEffect(() => {
+    setHistory(h => {
+      const e: HistoryEntry = { t: tick.current++, sp: pid.setpoint, out: pid.output, err: pid.error, p: pid.p, i: pid.i, d: pid.d };
+      const n = [...h, e]; return n.length > 250 ? n.slice(-250) : n;
+    });
+  }, [pid]);
+
+  useEffect(() => { setParams({ kp, ki, kd }); }, [kp, ki, kd, setParams]);
+  useEffect(() => {
+    if (theme === "dark") document.documentElement.classList.add("dark");
+    else document.documentElement.classList.remove("dark");
+  }, [theme]);
+
+  // ── DEVICE LAYOUT DETECTION ──
+  // < 768px    → Mobile (bottom nav tabs, single view)
+  // 768-1099px → Tablet (single-column full-width stack, no cramped grids)
+  // 1100-1729px → Compact (sidebar 300px + main content)
+  // >= 1730px  → Desktop (sidebar 360px, spacious)
+  useEffect(() => {
+    const handleResize = () => {
+      const w = window.innerWidth;
+      if (w < 768) setLayoutMode("mobile");
+      else if (w < 1100) setLayoutMode("tablet");
+      else if (w < 1730) setLayoutMode("compact");
+      else setLayoutMode("desktop");
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const jointKeys = Object.keys(targetAngles) as Array<keyof JointData>;
+  const tempPct = Math.min(100, ((sensors.temp - 15) / 65) * 100);
+  const forcePct = Math.min(100, (sensors.force / 20) * 100);
+  const errPct = Math.min(100, (Math.abs(pid.error) / 45) * 100);
+
+  // ── COMPONENT BUILDING BLOCKS ──
+
+  const viewerMinH = layoutMode === 'mobile' ? 'min-h-[280px]' : layoutMode === 'tablet' ? 'min-h-[340px]' : layoutMode === 'compact' ? 'min-h-[380px]' : 'min-h-[480px]';
+
+  const ViewerBlock = (
+    <div className={`relative overflow-hidden bg-slate-900 rounded-2xl border border-slate-800 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.3)] shrink-0 w-full ${viewerMinH}`}>
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+        <span className="text-6xl opacity-30 drop-shadow-lg">🤖</span>
+        <span className="text-slate-400 text-sm font-semibold tracking-wide">CoppeliaSim 3D Viewer</span>
+        <span className="text-slate-600 text-xs font-mono">iframe → localhost:23020</span>
+      </div>
+      <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md rounded-full px-4 py-1.5 mt-auto text-xs text-slate-300 font-medium z-10">
+        Model: <span className="text-blue-400 font-bold">UR5</span> · 6 DOF
+      </div>
+      <div className="absolute top-4 right-4 bg-black/60 shadow-lg backdrop-blur-md rounded-xl p-2.5 flex flex-col gap-1 z-10">
+        <div className="text-xs text-emerald-400 font-mono font-bold flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_theme(colors.emerald.400)]"></span> 20 Hz</div>
+        <div className="text-[10px] text-slate-400 font-mono tracking-wide">MQTT 10 msg/s</div>
+      </div>
+    </div>
+  );
+
+  const SensorsBlock = (
+    <Card>
+      <CardLabel>Sensors</CardLabel>
+      <SensorGauge label="Motor temp" value={sensors.temp} unit="°C" pct={tempPct} colorClass="text-amber-500" bgClass="bg-amber-500" />
+      <SensorGauge label="Grip force" value={sensors.force} unit="N" pct={forcePct} colorClass="text-emerald-500" bgClass="bg-emerald-500" />
+      <SensorGauge label="PID error" value={Math.abs(pid.error).toFixed(1)} unit="°" pct={errPct} colorClass="text-rose-500 flex-1" bgClass="bg-rose-500" />
+    </Card>
+  );
+
+  const SetpointBlock = (
+    <Card>
+      <CardLabel>Setpoint — <span className="text-emerald-600 dark:text-emerald-400 ml-1 font-bold">{activeJoint}</span></CardLabel>
+      <div className="flex gap-1 mb-5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+        {jointKeys.map(j => (
+          <button
+            key={j}
+            onClick={() => setActiveJoint(j)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold font-mono transition-all ${j === activeJoint
+                ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                : "text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+              }`}
+          >
+            {j}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex justify-center items-baseline my-6 group">
+        <input
+          type="number"
+          value={targetAngles[activeJoint]}
+          onChange={e => setTarget(activeJoint, e.target.value === "" ? 0 : +e.target.value)}
+          className="text-6xl font-black text-center text-emerald-600 dark:text-emerald-400 font-mono tabular-nums bg-transparent border-b-[3px] border-emerald-200 dark:border-emerald-900 focus:border-emerald-500 dark:focus:border-emerald-500 outline-none w-32 pb-1 transition-colors"
+        />
+        <span className="text-3xl font-medium text-slate-400 ml-1">°</span>
+      </div>
+
+      <input type="range" min={-90} max={90} step={1} value={targetAngles[activeJoint]}
+        onChange={e => setTarget(activeJoint, +e.target.value)}
+        className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500" />
+
+      <div className="flex justify-between mt-2 text-xs text-slate-400 font-medium">
+        <span>-90°</span><span>+90°</span>
+      </div>
+      <div className="flex gap-1.5 mt-5 flex-wrap">
+        {[-45, 0, 30, 45, 90].map(v => (
+          <button key={v} onClick={() => setTarget(activeJoint, v)} className={`flex-1 min-w-[36px] py-2 rounded-lg text-xs font-semibold font-mono border transition-colors ${targetAngles[activeJoint] === v
+              ? "border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]"
+              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50"
+            }`}>
+            {v}°
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+
+  const TuningBlock = (
+    <Card>
+      <div className="flex justify-between items-center mb-5">
+        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide">PID TUNING ({activeJoint})</div>
+        <span className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">e(t) = sp - pv</span>
+      </div>
+      <ParamSlider label="Kp" value={kp} onChange={setKp} min={0} max={10} step={0.1} accentClass="text-blue-500 dark:text-blue-400" />
+      <ParamSlider label="Ki" value={ki} onChange={setKi} min={0} max={5} step={0.05} accentClass="text-emerald-500 dark:text-emerald-400" />
+      <ParamSlider label="Kd" value={kd} onChange={setKd} min={0} max={3} step={0.05} accentClass="text-amber-500 dark:text-amber-400" />
+    </Card>
+  );
+
+  const GripperStatusBlock = (
+    <div className="flex flex-col gap-4">
+      <button 
+        onClick={() => setGripClosed(!gripClosed)} 
+        className={`w-full py-4 px-4 shrink-0 rounded-2xl border flex items-center justify-center gap-3 text-sm font-bold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-emerald-500 ${
+        gripClosed 
+          ? "border-emerald-400 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 shadow-[inset_0_2px_8px_rgba(16,185,129,0.1)]" 
+          : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-md"
+      }`}>
+        <span className="text-xl drop-shadow-sm">{gripClosed ? "✊" : "🤲"}</span>
+        {gripClosed ? "Gripper Locked" : "Gripper Open"}
+      </button>
+
+      <div className="px-5 py-3.5 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs text-slate-500 dark:text-slate-400 font-medium tracking-wide">
+        <span>MQTT Status</span>
+        <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_6px_theme(colors.emerald.500)]" />
+          Demo mode
+        </span>
+      </div>
+    </div>
+  );
+
+  const ChartsBlock = (
+    <div className={`grid gap-5 ${layoutMode === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'} shrink-0`}>
+      <Card className="h-[240px] flex flex-col p-5 w-full">
+        <CardLabel>PID response ({activeJoint})</CardLabel>
+        <div className="flex-1 w-full min-h-0 mt-2">
+          <ChartPID data={history} />
+        </div>
+      </Card>
+      <Card className="h-[240px] flex flex-col p-5 w-full">
+        <CardLabel>P / I / D terms</CardLabel>
+        <div className="flex-1 w-full min-h-0 mt-2">
+          <ChartTerms data={history} />
+        </div>
+      </Card>
+    </div>
+  );
+
+  const JointsBarBlock = (
+    <Card className="p-5 md:p-6 grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6 shrink-0 z-10 w-full">
+      {jointKeys.map(j => {
+        const isActive = j === activeJoint;
+        return (
+          <div key={j} className="flex items-center gap-3 md:gap-4 w-full">
+            <span className={`text-sm md:text-base font-bold font-mono min-w-[28px] ${isActive ? 'text-blue-600 dark:text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'text-slate-400 dark:text-slate-500'}`}>{j}</span>
+            <input type="range" min={-180} max={180} step={1} value={targetAngles[j]}
+              onChange={e => {
+                setTarget(j, +e.target.value);
+                setActiveJoint(j);
+              }}
+              className={`flex-1 h-2 rounded-lg appearance-none cursor-pointer bg-slate-200 dark:bg-slate-700 min-w-[60px] ${isActive ? 'accent-blue-500 shadow-sm' : 'accent-slate-400 dark:accent-slate-500'}`} />
+            <div className="flex items-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-lg px-2 py-1 shadow-inner shrink-0">
+              <input 
+                type="number"
+                value={targetAngles[j]}
+                onChange={e => {
+                  setTarget(j, e.target.value === "" ? 0 : +e.target.value);
+                  setActiveJoint(j);
+                }}
+                className="w-10 md:w-11 text-sm font-mono font-medium text-slate-700 dark:text-slate-200 bg-transparent border-none outline-none text-right flex-shrink-0"
+              />
+              <span className="text-sm font-bold text-slate-400 dark:text-slate-500 ml-0.5">°</span>
+            </div>
+          </div>
+        );
+      })}
+    </Card>
+  );
+
+  const CompactJointsBarBlock = (
+    <Card className="p-4 md:p-5 flex flex-wrap gap-3 shrink-0 z-10 w-full border border-slate-200 dark:border-slate-800 shadow-sm">
+      {jointKeys.map(j => {
+        const isActive = j === activeJoint;
+        return (
+          <div 
+            key={j} 
+            className={`flex flex-col flex-[1_1_30%] md:flex-[1_1_14%] p-3 rounded-xl border transition-all ${
+              isActive 
+                ? 'border-blue-400 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/20 shadow-[inset_0_2px_4px_rgba(59,130,246,0.05)]' 
+                : 'border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/20'
+            }`}
+          >
+            <div className="flex justify-between items-center mb-2">
+              <span className={`text-[10px] md:text-xs font-bold font-mono ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>{j}</span>
+              {isActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_6px_rgba(59,130,246,0.5)]"></span>}
+            </div>
+            <div className="flex items-center w-full bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 shadow-sm">
+              <input 
+                type="number"
+                value={targetAngles[j]}
+                onChange={e => {
+                  setTarget(j, e.target.value === "" ? 0 : +e.target.value);
+                  setActiveJoint(j);
+                }}
+                className={`w-full text-base md:text-lg font-mono font-bold bg-transparent border-none outline-none text-right ${isActive ? 'text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-300'}`}
+              />
+              <span className="text-xs font-bold text-slate-400 dark:text-slate-500 ml-1">°</span>
+            </div>
+          </div>
+        );
+      })}
+    </Card>
+  );
+
+  return (
+    <div className={`flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 font-sans transition-colors duration-300 ${layoutMode === 'mobile' ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
+
+      {/* ── HEADER ── */}
+      <header className="flex items-center justify-between px-4 md:px-6 py-3 shrink-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm z-50 sticky top-0 transition-colors duration-300">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-sm font-bold tracking-tighter shadow-md">
+            UR
+          </div>
+          <div>
+            <div className="text-sm md:text-base font-semibold tracking-tight text-slate-900 dark:text-white">UR5 Control Station</div>
+            {layoutMode !== "mobile" && <div className="text-[10px] text-slate-500 font-medium tracking-wide">CoppeliaSim · MQTT · PID</div>}
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 font-medium">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Connected
+          </div>
+          <button
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+          >
+            {theme === "light" ? "🌙" : "☀️"}
+          </button>
+        </div>
+      </header>
+
+      {/* ── FULL DESKTOP (>= 1730px) ── */}
+      {layoutMode === "desktop" && (
+        <div className="flex-1 w-full max-w-[1920px] mx-auto p-6 grid grid-cols-[1fr_360px] gap-6 items-start">
+          <div className="flex flex-col gap-6 min-w-0">
+            {ViewerBlock}
+            {ChartsBlock}
+            {JointsBarBlock}
+          </div>
+          <div className="flex flex-col gap-6 sticky top-20">
+            {SensorsBlock}
+            {SetpointBlock}
+            {TuningBlock}
+            {GripperStatusBlock}
+          </div>
+        </div>
+      )}
+
+      {/* ── COMPACT DESKTOP (1100px - 1729px) ── */}
+      {layoutMode === "compact" && (
+        <div className="flex-1 w-full max-w-[1440px] mx-auto p-5 grid grid-cols-[1fr_300px] gap-5 items-start">
+          <div className="flex flex-col gap-5 min-w-0">
+            {ViewerBlock}
+            {ChartsBlock}
+            {CompactJointsBarBlock}
+          </div>
+          <div className="flex flex-col gap-5 sticky top-20">
+            {SensorsBlock}
+            {SetpointBlock}
+            {TuningBlock}
+            {GripperStatusBlock}
+          </div>
+        </div>
+      )}
+
+      {/* ── TABLET (768px - 1099px) ── */}
+      {/* Single-column full-width stack — prevents cramped 2-column grids */}
+      {layoutMode === "tablet" && (
+        <div className="flex flex-col gap-5 p-5 w-full max-w-[900px] mx-auto mb-8">
+          {ViewerBlock}
+
+          <div className="grid grid-cols-[1fr_1fr] gap-5">
+            {SetpointBlock}
+            {SensorsBlock}
+          </div>
+
+          {CompactJointsBarBlock}
+
+          <div className="grid grid-cols-[1fr_1fr] gap-5">
+            {TuningBlock}
+            {GripperStatusBlock}
+          </div>
+
+          {ChartsBlock}
+        </div>
+      )}
+
+      {/* ── MOBILE SCROLLABLE CONTENT (<768px) ── */}
+      {layoutMode === "mobile" && (
+        <div className="flex flex-col flex-1 p-4 pb-20 overflow-y-auto overflow-x-hidden gap-4 custom-scrollbar relative">
+          {mobileTab === "control" && (
+            <>
+              {SetpointBlock}
+              {JointsBarBlock}
+              {TuningBlock}
+              {GripperStatusBlock}
+            </>
+          )}
+
+          {mobileTab === "viewer" && (
+            <>
+              {ViewerBlock}
+              {SensorsBlock}
+            </>
+          )}
+
+          {mobileTab === "charts" && (
+            <>
+              <div className="text-xl font-bold px-2 py-1 text-slate-700 dark:text-slate-200 flex items-center justify-between">
+                <span>Targeted: <span className="text-indigo-600 dark:text-indigo-400">{activeJoint}</span></span>
+              </div>
+              {ChartsBlock}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── MOBILE BOTTOM NAVIGATION ── */}
+      {layoutMode === "mobile" && (
+        <nav className="shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 flex justify-around items-center px-2 py-1 pb-[env(safe-area-inset-bottom)] z-50 shadow-[0_-8px_20px_rgba(0,0,0,0.04)] transition-colors absolute bottom-0 w-full">
+          <button onClick={() => setMobileTab("control")} className={`flex flex-col items-center p-2 rounded-xl w-1/3 transition-colors ${mobileTab === 'control' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+            <svg className="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+            <span className="text-[10px] font-bold tracking-wide">Control</span>
+          </button>
+          <button onClick={() => setMobileTab("viewer")} className={`flex flex-col items-center p-2 rounded-xl w-1/3 transition-colors ${mobileTab === 'viewer' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+            <svg className="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" /></svg>
+            <span className="text-[10px] font-bold tracking-wide">Robot</span>
+          </button>
+          <button onClick={() => setMobileTab("charts")} className={`flex flex-col items-center p-2 rounded-xl w-1/3 transition-colors ${mobileTab === 'charts' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+            <svg className="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+            <span className="text-[10px] font-bold tracking-wide">Charts</span>
+          </button>
+        </nav>
+      )}
+
+      {/* GLOBAL CSS */}
+      <style>{`
+        input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button {
+          -webkit-appearance: none; margin: 0;
+        }
+        input[type="number"] { -moz-appearance: textfield; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; }
+      `}</style>
+    </div>
+  );
+}
