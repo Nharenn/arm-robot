@@ -259,12 +259,12 @@ export default function App() {
 
       {/* ── HEADER ── */}
       <header className="flex items-center justify-between px-4 md:px-6 py-3 shrink-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm z-50 sticky top-0 transition-colors duration-300">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-sm font-bold tracking-tighter shadow-md">
-            UR
+        <div className="flex items-center gap-4">
+          <div className="h-12 md:h-16 flex items-center justify-center">
+            <img src="/logo.png" alt="IUD Logo" className="h-full w-auto object-contain drop-shadow-sm" />
           </div>
           <div>
-            <div className="text-sm md:text-base font-semibold tracking-tight text-slate-900 dark:text-white">UR5 Control Station</div>
+            <div className="text-sm md:text-base font-extrabold tracking-tight text-slate-900 dark:text-white uppercase">ARM CONTROL</div>
             {layoutMode !== "mobile" && <div className="text-[10px] text-slate-500 font-medium tracking-wide">CoppeliaSim · MQTT · PID</div>}
           </div>
         </div>
