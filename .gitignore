@@ -14,6 +14,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Build artifacts
+tsconfig.tsbuildinfo
+
 # OS
 .DS_Store
 Thumbs.db
@@ -22,5 +25,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# CoppeliaSim binary scene (large file)
-# ur5_mqtt_control.ttt
+# CoppeliaSim binary scene (large file — uncomment to track it)
+# coppeliasim/ur5_mqtt_control.ttt

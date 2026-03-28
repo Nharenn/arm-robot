@@ -33,12 +33,12 @@ vercel
 
 ```bash
 # 1. Instalar todo (solo la primera vez)
-./setup.sh
+./scripts/setup.sh
 
-# 2. Abrir CoppeliaSim → cargar UR5 → Play
+# 2. Abrir CoppeliaSim → cargar coppeliasim/ur5_mqtt_control.ttt → Play
 
 # 3. Iniciar todos los servicios
-./start.sh
+./scripts/start.sh
 ```
 
 ## Paso 3: Exponer con Ngrok
@@ -48,7 +48,7 @@ vercel
 ngrok config add-authtoken TU_TOKEN_DE_NGROK
 
 # Abrir los túneles
-./start_remote.sh
+./scripts/start_remote.sh
 ```
 
 Ngrok mostrará las URLs públicas. Ejemplo:

@@ -4,11 +4,14 @@
 # ║                                                              ║
 # ║  Starts: MQTT Broker, Python Bridge, Video Stream, Frontend  ║
 # ║                                                              ║
-# ║  Usage: ./start.sh                                           ║
+# ║  Usage: ./scripts/start.sh                                    ║
 # ║  Stop:  Press Ctrl+C (stops all services)                    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 set -e
+
+# Navigate to project root (works from any directory)
+cd "$(dirname "$0")/.."
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

@@ -6,12 +6,15 @@
 # ║  You can control the robot from ANY device, anywhere.        ║
 # ║                                                              ║
 # ║  Prerequisites:                                              ║
-# ║  1. Run ./start.sh first (local services must be running)    ║
+# ║  1. Run ./scripts/start.sh first (services must be running)  ║
 # ║  2. Sign up at https://ngrok.com and get your auth token     ║
 # ║  3. Run: ngrok config add-authtoken YOUR_TOKEN               ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 set -e
+
+# Navigate to project root (works from any directory)
+cd "$(dirname "$0")/.."
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

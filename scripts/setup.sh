@@ -11,6 +11,9 @@
 
 set -e
 
+# Navigate to project root (works from any directory)
+cd "$(dirname "$0")/.."
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -86,15 +89,15 @@ echo -e "${GREEN}║  ✅ Setup Complete!                          ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "To start everything, run:"
-echo -e "  ${BLUE}./start.sh${NC}"
+echo -e "  ${BLUE}./scripts/start.sh${NC}"
 echo ""
 echo -e "Or start each service manually:"
 echo -e "  ${YELLOW}1.${NC} mosquitto -c backend/mosquitto.conf"
-echo -e "  ${YELLOW}2.${NC} Open CoppeliaSim → load ur5_mqtt_control.ttt → Play"
+echo -e "  ${YELLOW}2.${NC} Open CoppeliaSim → load coppeliasim/ur5_mqtt_control.ttt → Play"
 echo -e "  ${YELLOW}3.${NC} cd backend && python3 mqtt_bridge.py"
 echo -e "  ${YELLOW}4.${NC} cd backend && python3 video_stream.py"
 echo -e "  ${YELLOW}5.${NC} npm run dev"
 echo ""
 echo -e "For remote access:"
-echo -e "  ${YELLOW}6.${NC} ./start_remote.sh"
+echo -e "  ${YELLOW}6.${NC} ./scripts/start_remote.sh"
 echo ""
