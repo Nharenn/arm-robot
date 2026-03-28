@@ -38,7 +38,7 @@ interface UseMQTTOptions {
 
 export function useMQTT(options: UseMQTTOptions = {}) {
   const {
-    brokerUrl = `ws://${window.location.hostname}:9001`,
+    brokerUrl,
     onJoints,
     onPID,
     onSensors,
@@ -58,6 +58,11 @@ export function useMQTT(options: UseMQTTOptions = {}) {
   callbacksRef.current = { onJoints, onPID, onSensors, onStatus };
 
   useEffect(() => {
+    if (!brokerUrl) {
+      setConnectionStatus("disconnected");
+      return;
+    }
+
     setConnectionStatus("connecting");
 
     const client = mqtt.connect(brokerUrl, {
