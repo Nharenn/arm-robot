@@ -3,10 +3,12 @@ import { JointData, HistoryEntry, LayoutMode } from "./types";
 import { useRobotData } from "./hooks/useRobotData";
 import { Card, CardLabel, SensorGauge, ParamSlider } from "./components/UIBlocks";
 import { ChartPID, ChartTerms } from "./components/Charts";
+import ConnectionSettings, { getInitialConfig, RemoteConfig } from "./components/ConnectionSettings";
 
 export default function App() {
+  const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(getInitialConfig);
   const [activeJoint, setActiveJoint] = useState<keyof JointData>("J2");
-  const { pid, sensors, targetAngles, setTarget, setParams } = useRobotData(activeJoint);
+  const { pid, sensors, targetAngles, setTarget, setParams, setGripper, connectionStatus, bridgeStatus, msgRate } = useRobotData(activeJoint, remoteConfig?.mqttUrl);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [mobileTab, setMobileTab] = useState<"control" | "viewer" | "charts">("control");
@@ -17,6 +19,12 @@ export default function App() {
   const [kd, setKd] = useState<number>(0.1);
   const [gripClosed, setGripClosed] = useState<boolean>(false);
   const tick = useRef<number>(0);
+
+  const isConnected = connectionStatus === "connected";
+  const statusColor = isConnected ? "bg-emerald-500" : connectionStatus === "connecting" ? "bg-amber-500" : "bg-red-500";
+  const statusText = isConnected
+    ? (bridgeStatus.mode === "live" ? "Live" : bridgeStatus.mode === "demo" ? "Demo" : "Connected")
+    : connectionStatus === "connecting" ? "Connecting..." : "Offline";
 
   const prevJointRef = useRef<keyof JointData>(activeJoint);
   useEffect(() => {
@@ -62,19 +70,87 @@ export default function App() {
 
   const viewerMinH = layoutMode === 'mobile' ? 'min-h-[280px]' : layoutMode === 'tablet' ? 'min-h-[340px]' : layoutMode === 'compact' ? 'min-h-[380px]' : 'min-h-[480px]';
 
+  const streamUrl = remoteConfig?.streamUrl || `http://${window.location.hostname}:8081`;
+
+  // ── Viewer zoom/pan state ──
+  const [viewerZoom, setViewerZoom] = useState(1);
+  const [viewerPan, setViewerPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  const handleViewerWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    setViewerZoom(z => Math.min(5, Math.max(0.5, z - e.deltaY * 0.001)));
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    setIsDragging(true);
+    dragStart.current = { x: e.clientX, y: e.clientY, panX: viewerPan.x, panY: viewerPan.y };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setViewerPan({
+      x: dragStart.current.panX + (e.clientX - dragStart.current.x),
+      y: dragStart.current.panY + (e.clientY - dragStart.current.y),
+    });
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  const resetView = () => { setViewerZoom(1); setViewerPan({ x: 0, y: 0 }); };
+
   const ViewerBlock = (
-    <div className={`relative overflow-hidden bg-slate-900 rounded-2xl border border-slate-800 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.3)] shrink-0 w-full ${viewerMinH}`}>
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-        <span className="text-6xl opacity-30 drop-shadow-lg">🤖</span>
-        <span className="text-slate-400 text-sm font-semibold tracking-wide">CoppeliaSim 3D Viewer</span>
-        <span className="text-slate-600 text-xs font-mono">iframe → localhost:23020</span>
+    <div className={`relative overflow-hidden bg-slate-900 rounded-2xl border border-slate-800 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.3)] shrink-0 w-full ${viewerMinH}`}
+      onWheel={handleViewerWheel}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+    >
+      {/* Live MJPEG stream from video_stream.py */}
+      <img
+        src={`${streamUrl}/stream.mjpeg`}
+        className="absolute inset-0 w-full h-full object-contain border-0 select-none"
+        alt="CoppeliaSim Live"
+        draggable={false}
+        style={{
+          background: "#0f172a",
+          transform: `scale(${viewerZoom}) translate(${viewerPan.x / viewerZoom}px, ${viewerPan.y / viewerZoom}px)`,
+          transformOrigin: "center center",
+          transition: isDragging ? "none" : "transform 0.15s ease-out",
+        }}
+      />
+      {/* Zoom controls */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-1.5 z-20">
+        <button onClick={() => setViewerZoom(z => Math.min(5, z + 0.3))}
+          className="w-8 h-8 rounded-lg bg-black/60 backdrop-blur-md text-white hover:bg-white/20 flex items-center justify-center text-lg font-bold transition-colors border border-white/10"
+          title="Acercar">+</button>
+        <button onClick={() => setViewerZoom(z => Math.max(0.5, z - 0.3))}
+          className="w-8 h-8 rounded-lg bg-black/60 backdrop-blur-md text-white hover:bg-white/20 flex items-center justify-center text-lg font-bold transition-colors border border-white/10"
+          title="Alejar">−</button>
+        <button onClick={resetView}
+          className="w-8 h-8 rounded-lg bg-black/60 backdrop-blur-md text-white hover:bg-white/20 flex items-center justify-center text-xs font-bold transition-colors border border-white/10 mt-1"
+          title="Reset vista">⟲</button>
       </div>
+      {/* Zoom indicator */}
+      {viewerZoom !== 1 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md rounded-full px-3 py-1 text-[10px] text-slate-300 font-mono z-10">
+          {(viewerZoom * 100).toFixed(0)}%
+        </div>
+      )}
       <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md rounded-full px-4 py-1.5 mt-auto text-xs text-slate-300 font-medium z-10">
         Model: <span className="text-blue-400 font-bold">UR5</span> · 6 DOF
+        {bridgeStatus.mode === "live" && <span className="ml-2 text-emerald-400">LIVE</span>}
       </div>
       <div className="absolute top-4 right-4 bg-black/60 shadow-lg backdrop-blur-md rounded-xl p-2.5 flex flex-col gap-1 z-10">
-        <div className="text-xs text-emerald-400 font-mono font-bold flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_theme(colors.emerald.400)]"></span> 20 Hz</div>
-        <div className="text-[10px] text-slate-400 font-mono tracking-wide">MQTT 10 msg/s</div>
+        <div className={`text-xs font-mono font-bold flex items-center gap-1.5 ${isConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
+          <span className={`w-2 h-2 rounded-full ${statusColor} animate-pulse shadow-[0_0_8px_currentColor]`}></span>
+          {statusText}
+        </div>
+        <div className="text-[10px] text-slate-400 font-mono tracking-wide">MQTT {msgRate} msg/s</div>
       </div>
     </div>
   );
@@ -151,7 +227,7 @@ export default function App() {
   const GripperStatusBlock = (
     <div className="flex flex-col gap-4">
       <button 
-        onClick={() => setGripClosed(!gripClosed)} 
+        onClick={() => { setGripClosed(!gripClosed); setGripper(!gripClosed); }}
         className={`w-full py-4 px-4 shrink-0 rounded-2xl border flex items-center justify-center gap-3 text-sm font-bold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-emerald-500 ${
         gripClosed 
           ? "border-emerald-400 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 shadow-[inset_0_2px_8px_rgba(16,185,129,0.1)]" 
@@ -163,9 +239,9 @@ export default function App() {
 
       <div className="px-5 py-3.5 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs text-slate-500 dark:text-slate-400 font-medium tracking-wide">
         <span>MQTT Status</span>
-        <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_6px_theme(colors.emerald.500)]" />
-          Demo mode
+        <span className={`font-bold flex items-center gap-1.5 ${isConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${statusColor} animate-pulse shadow-[0_0_6px_currentColor]`} />
+          {statusText} {isConnected && `· ${msgRate} msg/s`}
         </span>
       </div>
     </div>
@@ -270,8 +346,8 @@ export default function App() {
         </div>
         <div className="flex items-center gap-4">
           <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Connected
+            <span className={`w-2 h-2 rounded-full ${statusColor} animate-pulse`} />
+            {statusText}
           </div>
           <button
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}
@@ -384,6 +460,13 @@ export default function App() {
           </button>
         </nav>
       )}
+
+      {/* CONNECTION SETTINGS */}
+      <ConnectionSettings
+        onConnect={setRemoteConfig}
+        currentConfig={remoteConfig}
+        connectionStatus={connectionStatus}
+      />
 
       {/* GLOBAL CSS */}
       <style>{`

@@ -1,7 +1,26 @@
+# Dependencies
 node_modules/
 dist/
-.DS_Store
+
+# Environment
 .env
 .env.*
 !.env.example
 *.local
+
+# Python
+.venv*/
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# CoppeliaSim binary scene (large file)
+# ur5_mqtt_control.ttt
