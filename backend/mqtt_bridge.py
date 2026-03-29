@@ -113,6 +113,10 @@ class UR5Bridge:
         self.target_angles: Dict[str, float] = {
             "J1": 0, "J2": 0, "J3": 0, "J4": 0, "J5": 0, "J6": 0
         }
+        # Posición interpolada actual — se mueve gradualmente hacia target_angles
+        self.interp_angles: Dict[str, float] = {
+            "J1": 0, "J2": 0, "J3": 0, "J4": 0, "J5": 0, "J6": 0
+        }
         self.gripper_closed = False
         self.pid = PIDController()
         self.active_joint = "J2"
@@ -217,10 +221,11 @@ class UR5Bridge:
             if len(self.joint_handles) == 6:
                 self.coppelia_connected = True
                 print(f"✅ CoppeliaSim: Connected! Found 6 joints")
-                # Leer posición actual y usarla como target inicial — evita snap a 0°
+                # Leer posición actual y usarla como target e interp inicial — evita snap a 0°
                 initial = self.read_joint_positions()
                 if initial:
                     self.target_angles.update(initial)
+                    self.interp_angles.update(initial)
                     print(f"✅ CoppeliaSim: Initial targets synced to current position")
                 self._publish_status()
                 return True
@@ -330,14 +335,22 @@ class UR5Bridge:
             return {}
 
     def write_joint_targets(self):
-        """Write target angles to CoppeliaSim joints."""
+        """Mueve los joints gradualmente hacia target — evita oscilación por saltos bruscos."""
         if not self.coppelia_connected or not self.joint_handles:
             return
         try:
             keys = ["J1", "J2", "J3", "J4", "J5", "J6"]
+            max_step = 2.0  # grados por ciclo (2° * 20Hz = 40°/s máximo)
             for i, handle in enumerate(self.joint_handles):
-                target_rad = math.radians(self.target_angles[keys[i]])
-                self.sim.setJointTargetPosition(handle, target_rad)
+                key = keys[i]
+                target = self.target_angles[key]
+                current_interp = self.interp_angles[key]
+                diff = target - current_interp
+                if abs(diff) <= max_step:
+                    self.interp_angles[key] = target
+                else:
+                    self.interp_angles[key] = current_interp + math.copysign(max_step, diff)
+                self.sim.setJointTargetPosition(handle, math.radians(self.interp_angles[key]))
         except Exception as e:
             print(f"⚠️  CoppeliaSim: Error writing joints — {e}")
             self.coppelia_connected = False
