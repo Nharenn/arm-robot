@@ -24,7 +24,6 @@ function getFromURL(key: string): string {
 
 export interface RemoteConfig {
   mqttUrl: string;
-  streamUrl: string;
 }
 
 interface Props {
@@ -36,17 +35,15 @@ interface Props {
 export function getInitialConfig(): RemoteConfig | null {
   // 1. Check URL params first (for shareable links)
   const mqttParam = getFromURL("mqtt");
-  const streamParam = getFromURL("stream");
   if (mqttParam) {
     return {
       mqttUrl: mqttParam.startsWith("ws") ? mqttParam : `wss://${mqttParam}`,
-      streamUrl: streamParam || "",
     };
   }
 
   // 2. If localhost, auto-connect
   if (isLocalhost) {
-    return { mqttUrl: DEFAULT_MQTT, streamUrl: DEFAULT_STREAM };
+    return { mqttUrl: DEFAULT_MQTT };
   }
 
   // 3. Otherwise, show settings panel
@@ -55,7 +52,6 @@ export function getInitialConfig(): RemoteConfig | null {
 
 export default function ConnectionSettings({ onConnect, currentConfig, connectionStatus }: Props) {
   const [mqttUrl, setMqttUrl] = useState(currentConfig?.mqttUrl || DEFAULT_MQTT);
-  const [streamUrl, setStreamUrl] = useState(currentConfig?.streamUrl || DEFAULT_STREAM);
   const [showPanel, setShowPanel] = useState(!currentConfig && !isLocalhost);
 
   // If no config and not localhost, force panel open
@@ -67,11 +63,9 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
 
   const handleConnect = () => {
     const mqtt = mqttUrl.trim();
-    const stream = streamUrl.trim();
     if (!mqtt) return;
     onConnect({
       mqttUrl: mqtt.startsWith("ws") ? mqtt : `wss://${mqtt}`,
-      streamUrl: stream,
     });
     setShowPanel(false);
   };
@@ -109,22 +103,6 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
                 Pegar la URL del túnel Ngrok para el puerto 9001
               </p>
             </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1.5 tracking-wide">
-                VIDEO STREAM URL
-              </label>
-              <input
-                type="text"
-                value={streamUrl}
-                onChange={e => setStreamUrl(e.target.value)}
-                placeholder="https://xyz789.ngrok-free.app"
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm font-mono placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-[10px] text-slate-500 mt-1">
-                Pegar la URL del túnel Ngrok para el puerto 8081 (opcional)
-              </p>
-            </div>
           </div>
 
           <button
@@ -135,10 +113,17 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
             Conectar al Robot
           </button>
 
+          <button
+            onClick={() => { onConnect({ mqttUrl: "" }); setShowPanel(false); }}
+            className="w-full mt-3 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors text-sm tracking-wide border border-slate-600 flex justify-center items-center gap-2"
+          >
+            <span>✨</span> Entrar en Modo Demostración (Simulado)
+          </button>
+
           {isLocalhost && (
             <button
-              onClick={() => { onConnect({ mqttUrl: DEFAULT_MQTT, streamUrl: DEFAULT_STREAM }); setShowPanel(false); }}
-              className="w-full mt-2 py-2.5 text-slate-400 hover:text-white text-xs font-medium transition-colors"
+              onClick={() => { onConnect({ mqttUrl: DEFAULT_MQTT }); setShowPanel(false); }}
+              className="w-full mt-4 py-2.5 text-slate-400 hover:text-white text-xs font-medium transition-colors"
             >
               Usar conexión local (localhost)
             </button>
@@ -189,11 +174,6 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 mb-1 tracking-wide">MQTT BROKER</label>
             <input type="text" value={mqttUrl} onChange={e => setMqttUrl(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500" />
-          </div>
-          <div>
-            <label className="block text-[10px] font-semibold text-slate-500 mb-1 tracking-wide">VIDEO STREAM</label>
-            <input type="text" value={streamUrl} onChange={e => setStreamUrl(e.target.value)}
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
         </div>

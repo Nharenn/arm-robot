@@ -27,3 +27,5 @@ Thumbs.db
 
 # CoppeliaSim binary scene (large file — uncomment to track it)
 # coppeliasim/ur5_mqtt_control.ttt
+.vercel
+.env*.local
