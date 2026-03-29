@@ -16,15 +16,18 @@ import { useMQTT, ConnectionStatus, BridgeStatus } from "./useMQTT";
 
 export function useRobotData(activeJoint: keyof JointData, brokerUrl?: string) {
   const [joints, setJoints] = useState<JointData>({ J1: 0, J2: 0, J3: 0, J4: 0, J5: 0, J6: 0 });
-  const [pid, setPid] = useState<PIDData>({ setpoint: 45, error: 0, output: 0, p: 0, i: 0, d: 0 });
+  const [pid, setPid] = useState<PIDData>({ setpoint: 0, error: 0, output: 0, p: 0, i: 0, d: 0 });
   const [sensors, setSensors] = useState<SensorData>({ temp: 28, force: 0 });
-  const [targetAngles, setTargetAngles] = useState<JointData>({ J1: 10, J2: 45, J3: -30, J4: 15, J5: 0, J6: 0 });
+  // Default todo en 0 — al conectar se sincroniza con la posición real del robot
+  const [targetAngles, setTargetAngles] = useState<JointData>({ J1: 0, J2: 0, J3: 0, J4: 0, J5: 0, J6: 0 });
 
   const targetsRef = useRef<JointData>(targetAngles);
   const activeJRef = useRef<keyof JointData>(activeJoint);
   const pidParamsRef = useRef({ kp: 2, ki: 0.5, kd: 0.1 });
   // Solo publicar cuando el usuario mueve algo — evita que dos clientes se pisen al conectar
   const userInteractedRef = useRef(false);
+  // Para sincronizar targets con la posición real al conectar (solo una vez)
+  const syncedOnConnectRef = useRef(false);
 
   // For local fallback simulation
   const intRef = useRef<number>(0);
@@ -44,7 +47,14 @@ export function useRobotData(activeJoint: keyof JointData, brokerUrl?: string) {
   } = useMQTT({
     brokerUrl,
     onJoints: (data) => {
-      setJoints(data as unknown as JointData);
+      const incoming = data as unknown as JointData;
+      setJoints(incoming);
+      // Al recibir el primer mensaje de joints, sincronizar los targets locales
+      // con la posición real del robot (solo si el usuario aún no ha tocado nada)
+      if (!syncedOnConnectRef.current && !userInteractedRef.current) {
+        syncedOnConnectRef.current = true;
+        setTargetAngles(incoming);
+      }
     },
     onPID: (data) => {
       setPid(data as unknown as PIDData);
@@ -55,6 +65,14 @@ export function useRobotData(activeJoint: keyof JointData, brokerUrl?: string) {
   });
 
   const isConnected = connectionStatus === "connected";
+
+  // Resetear sync al desconectar para re-sincronizar en la próxima conexión
+  useEffect(() => {
+    if (!isConnected) {
+      syncedOnConnectRef.current = false;
+      userInteractedRef.current = false;
+    }
+  }, [isConnected]);
 
   // ── Send targets to bridge solo cuando el usuario interactuó activamente ──
   // Evita que un segundo cliente publique sus valores por defecto al conectar
