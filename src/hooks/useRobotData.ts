@@ -23,6 +23,8 @@ export function useRobotData(activeJoint: keyof JointData, brokerUrl?: string) {
   const targetsRef = useRef<JointData>(targetAngles);
   const activeJRef = useRef<keyof JointData>(activeJoint);
   const pidParamsRef = useRef({ kp: 2, ki: 0.5, kd: 0.1 });
+  // Solo publicar cuando el usuario mueve algo — evita que dos clientes se pisen al conectar
+  const userInteractedRef = useRef(false);
 
   // For local fallback simulation
   const intRef = useRef<number>(0);
@@ -54,9 +56,10 @@ export function useRobotData(activeJoint: keyof JointData, brokerUrl?: string) {
 
   const isConnected = connectionStatus === "connected";
 
-  // ── Send targets to bridge whenever they change ──
+  // ── Send targets to bridge solo cuando el usuario interactuó activamente ──
+  // Evita que un segundo cliente publique sus valores por defecto al conectar
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && userInteractedRef.current) {
       publishJoints({ ...targetAngles }, activeJoint);
     }
   }, [targetAngles, activeJoint, isConnected, publishJoints]);
@@ -107,9 +110,9 @@ export function useRobotData(activeJoint: keyof JointData, brokerUrl?: string) {
   // ── Public API ──
 
   const setTarget = useCallback((j: keyof JointData, v: number) => {
+    userInteractedRef.current = true; // marcar que el usuario movió algo
     setTargetAngles(p => {
       const updated = { ...p, [j]: v };
-      // Immediately send via MQTT if connected
       if (isConnected) {
         publishJoints(updated, activeJRef.current);
       }
