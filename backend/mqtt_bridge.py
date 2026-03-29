@@ -65,16 +65,19 @@ UR5_JOINT_NAMES_ALT = [
 
 class PIDController:
     """Simple PID controller for each joint."""
-    def __init__(self, kp=2.0, ki=0.5, kd=0.1):
+    def __init__(self, kp=1.0, ki=0.1, kd=0.05):
         self.kp = kp
         self.ki = ki
         self.kd = kd
         self.integral = 0.0
         self.prev_error = 0.0
-        self.integral_limit = 50.0
+        self.integral_limit = 20.0  # límite más bajo para evitar wind-up
 
     def update(self, setpoint: float, measured: float, dt: float) -> dict:
         error = setpoint - measured
+        # Resetear integral si el setpoint cambió mucho (evita wind-up)
+        if abs(error - self.prev_error) > 30:
+            self.integral = 0.0
         self.integral = max(-self.integral_limit,
                            min(self.integral_limit,
                                self.integral + error * dt))
@@ -394,8 +397,8 @@ class UR5Bridge:
             print("   Start CoppeliaSim and restart this bridge for live mode.")
             print()
 
-        # Main control loop at ~33Hz (reduce lag between CoppeliaSim and frontend)
-        dt = 0.03  # 30ms
+        # Main control loop at 20Hz — debe coincidir con el timestep de CoppeliaSim (50ms)
+        dt = 0.05  # 50ms
         print(f"🚀 Bridge running at {int(1/dt)} Hz — Press Ctrl+C to stop")
         print()
 

@@ -23,7 +23,7 @@ export function useRobotData(activeJoint: keyof JointData, brokerUrl?: string) {
 
   const targetsRef = useRef<JointData>(targetAngles);
   const activeJRef = useRef<keyof JointData>(activeJoint);
-  const pidParamsRef = useRef({ kp: 2, ki: 0.5, kd: 0.1 });
+  const pidParamsRef = useRef({ kp: 1.0, ki: 0.1, kd: 0.05 });
   // Solo publicar cuando el usuario mueve algo — evita que dos clientes se pisen al conectar
   const userInteractedRef = useRef(false);
   // Para sincronizar targets con la posición real al conectar (solo una vez)

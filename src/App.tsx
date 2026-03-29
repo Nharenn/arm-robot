@@ -15,9 +15,9 @@ export default function App() {
   const [mobileTab, setMobileTab] = useState<"control" | "viewer" | "charts">("control");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("desktop");
 
-  const [kp, setKp] = useState<number>(2);
-  const [ki, setKi] = useState<number>(0.5);
-  const [kd, setKd] = useState<number>(0.1);
+  const [kp, setKp] = useState<number>(1.0);
+  const [ki, setKi] = useState<number>(0.1);
+  const [kd, setKd] = useState<number>(0.05);
   const [gripClosed, setGripClosed] = useState<boolean>(false);
   const tick = useRef<number>(0);
 
