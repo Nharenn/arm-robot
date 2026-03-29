@@ -394,8 +394,8 @@ class UR5Bridge:
             print("   Start CoppeliaSim and restart this bridge for live mode.")
             print()
 
-        # Main control loop at ~20Hz
-        dt = 0.05  # 50ms
+        # Main control loop at ~33Hz (reduce lag between CoppeliaSim and frontend)
+        dt = 0.03  # 30ms
         print(f"🚀 Bridge running at {int(1/dt)} Hz — Press Ctrl+C to stop")
         print()
 

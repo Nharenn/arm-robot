@@ -20,17 +20,19 @@ export default function RobotArm3D({ angles, theme }: RobotArm3DProps) {
   const w2Ref = useRef<THREE.Group>(null);
   const w3Ref = useRef<THREE.Group>(null);
 
-  useFrame((state, delta) => {
-    const speed = 5 * delta;
-    if (baseRef.current) baseRef.current.rotation.y = THREE.MathUtils.damp(baseRef.current.rotation.y, rads[0], speed, delta);
-    
+  useFrame((_state, delta) => {
+    // Lambda constante: mueve ~34% por frame a 60fps → alcanza el target en ~10 frames (0.17s)
+    // ANTES: speed = 5 * delta ≈ 0.083 → solo 0.14% por frame (bug: delta multiplicado dos veces)
+    const lambda = 25;
+    if (baseRef.current) baseRef.current.rotation.y = THREE.MathUtils.damp(baseRef.current.rotation.y, rads[0], lambda, delta);
+
     // Invertimos las rotaciones (-rads) porque el eje Z de Three.js (WebGL) está espejado respecto a CoppeliaSim
-    if (shoulderRef.current) shoulderRef.current.rotation.z = THREE.MathUtils.damp(shoulderRef.current.rotation.z, -rads[1], speed, delta);
-    if (elbowRef.current) elbowRef.current.rotation.z = THREE.MathUtils.damp(elbowRef.current.rotation.z, -rads[2], speed, delta);
-    if (w1Ref.current) w1Ref.current.rotation.z = THREE.MathUtils.damp(w1Ref.current.rotation.z, -rads[3], speed, delta);
-    
-    if (w2Ref.current) w2Ref.current.rotation.y = THREE.MathUtils.damp(w2Ref.current.rotation.y, -rads[4], speed, delta); 
-    if (w3Ref.current) w3Ref.current.rotation.z = THREE.MathUtils.damp(w3Ref.current.rotation.z, -rads[5], speed, delta);
+    if (shoulderRef.current) shoulderRef.current.rotation.z = THREE.MathUtils.damp(shoulderRef.current.rotation.z, -rads[1], lambda, delta);
+    if (elbowRef.current) elbowRef.current.rotation.z = THREE.MathUtils.damp(elbowRef.current.rotation.z, -rads[2], lambda, delta);
+    if (w1Ref.current) w1Ref.current.rotation.z = THREE.MathUtils.damp(w1Ref.current.rotation.z, -rads[3], lambda, delta);
+
+    if (w2Ref.current) w2Ref.current.rotation.y = THREE.MathUtils.damp(w2Ref.current.rotation.y, -rads[4], lambda, delta);
+    if (w3Ref.current) w3Ref.current.rotation.z = THREE.MathUtils.damp(w3Ref.current.rotation.z, -rads[5], lambda, delta);
   });
 
   // ── MATERIALS ──

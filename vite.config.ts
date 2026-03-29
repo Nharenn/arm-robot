@@ -16,11 +16,15 @@ export default defineConfig({
     }),
   ],
   build: {
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: {
+          react: ["react", "react-dom"],
+          three: ["three"],
+          "react-three": ["@react-three/fiber", "@react-three/drei"],
           recharts: ["recharts"],
+          mqtt: ["mqtt"],
         },
       },
     },
