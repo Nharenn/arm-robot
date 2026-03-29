@@ -120,19 +120,24 @@ for t in data.get('tunnels', []):
         break
 " 2>/dev/null || echo "check http://localhost:4040")
 
-    echo -e "${CYAN}║  Frontend:     ${GREEN}${FRONTEND_URL}${NC}"
-    echo -e "${CYAN}║  MQTT WS:     ${GREEN}${MQTT_URL}${NC}"
-    echo -e "${CYAN}║  Video Stream: ${GREEN}${STREAM_URL}${NC}"
-    echo -e "${CYAN}║                                                          ║${NC}"
+    # Generar link de Vercel con ?mqtt= pre-configurado
+    VERCEL_APP="https://arm-robotic-iud.vercel.app"
+    VERCEL_LINK="${VERCEL_APP}?mqtt=${MQTT_URL}"
+
+    echo -e "${CYAN}║  MQTT WS (ngrok): ${GREEN}${MQTT_URL}${NC}"
+    echo -e "${CYAN}║  Video Stream:    ${GREEN}${STREAM_URL}${NC}"
     echo -e "${CYAN}║  Ngrok Dashboard: ${BLUE}http://localhost:4040${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║  🔗 Compartir este link (ya incluye la URL de MQTT):    ║${NC}"
+    echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${GREEN}║  ${YELLOW}${VERCEL_LINK}${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 fi
 
 echo ""
-echo -e "${YELLOW}⚠️  IMPORTANT: Update your frontend to use these URLs${NC}"
-echo -e "   The MQTT WebSocket URL needs to match the ngrok tunnel."
-echo -e "   Update the brokerUrl in useMQTT.ts or set VITE_MQTT_URL env var."
-echo ""
+echo -e "${YELLOW}Pegar el link de arriba para que el profesor acceda con MQTT ya configurado.${NC}"
 echo -e "Press Ctrl+C to stop tunnels"
 
 wait

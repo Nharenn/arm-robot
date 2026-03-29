@@ -11,9 +11,22 @@ import { useState, useEffect } from "react";
 const isLocalhost = typeof window !== "undefined" &&
   (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
+// ── Detectar si estamos en HTTPS (Vercel) ──
+const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+
+// ── MQTT URL desde variable de entorno (Vercel dashboard) ──
+const VITE_MQTT_URL = import.meta.env.VITE_MQTT_URL || "";
+
 // ── Defaults ──
 const DEFAULT_MQTT = isLocalhost ? `ws://localhost:9001` : "";
-const DEFAULT_STREAM = isLocalhost ? `http://localhost:8081` : "";
+
+// ── Fuerza wss:// si la página está en HTTPS para evitar mixed-content ──
+function normalizeWsUrl(url: string): string {
+  if (!url) return url;
+  if (!url.startsWith("ws")) return `wss://${url}`;
+  if (isHttps && url.startsWith("ws://")) return url.replace("ws://", "wss://");
+  return url;
+}
 
 // ── Leer desde URL params (permite compartir link preconfigurado) ──
 function getFromURL(key: string): string {
@@ -33,20 +46,23 @@ interface Props {
 }
 
 export function getInitialConfig(): RemoteConfig | null {
-  // 1. Check URL params first (for shareable links)
+  // 1. URL param ?mqtt=... (link compartido con ngrok ya incluido)
   const mqttParam = getFromURL("mqtt");
   if (mqttParam) {
-    return {
-      mqttUrl: mqttParam.startsWith("ws") ? mqttParam : `wss://${mqttParam}`,
-    };
+    return { mqttUrl: normalizeWsUrl(mqttParam) };
   }
 
-  // 2. If localhost, auto-connect
+  // 2. Variable de entorno VITE_MQTT_URL (configurada en Vercel dashboard)
+  if (VITE_MQTT_URL) {
+    return { mqttUrl: normalizeWsUrl(VITE_MQTT_URL) };
+  }
+
+  // 3. Si es localhost, auto-conectar al broker local
   if (isLocalhost) {
     return { mqttUrl: DEFAULT_MQTT };
   }
 
-  // 3. Otherwise, show settings panel
+  // 4. Sin config → mostrar panel de conexión
   return null;
 }
 
@@ -54,7 +70,7 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
   const [mqttUrl, setMqttUrl] = useState(currentConfig?.mqttUrl || DEFAULT_MQTT);
   const [showPanel, setShowPanel] = useState(!currentConfig && !isLocalhost);
 
-  // If no config and not localhost, force panel open
+  // Si no hay config y no es localhost, forzar panel abierto
   useEffect(() => {
     if (!currentConfig && !isLocalhost) {
       setShowPanel(true);
@@ -62,11 +78,9 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
   }, [currentConfig]);
 
   const handleConnect = () => {
-    const mqtt = mqttUrl.trim();
-    if (!mqtt) return;
-    onConnect({
-      mqttUrl: mqtt.startsWith("ws") ? mqtt : `wss://${mqtt}`,
-    });
+    const raw = mqttUrl.trim();
+    if (!raw) return;
+    onConnect({ mqttUrl: normalizeWsUrl(raw) });
     setShowPanel(false);
   };
 
@@ -74,7 +88,7 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
     ? "bg-emerald-500" : connectionStatus === "connecting"
     ? "bg-amber-500 animate-pulse" : "bg-red-500";
 
-  // ── Fullscreen setup panel (when no config) ──
+  // ── Panel fullscreen (sin config) ──
   if (showPanel && !currentConfig) {
     return (
       <div className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4">
@@ -100,7 +114,7 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm font-mono placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               <p className="text-[10px] text-slate-500 mt-1">
-                Pegar la URL del túnel Ngrok para el puerto 9001
+                URL del túnel Ngrok para el puerto 9001 del broker MQTT
               </p>
             </div>
           </div>
@@ -131,9 +145,11 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
 
           <div className="mt-6 p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              <span className="text-slate-400 font-semibold">Nota:</span> El estudiante debe ejecutar{" "}
-              <code className="text-blue-400 bg-slate-800 px-1 rounded">./start.sh</code> y{" "}
-              <code className="text-blue-400 bg-slate-800 px-1 rounded">./start_remote.sh</code> en su Mac para generar las URLs de Ngrok.
+              <span className="text-slate-400 font-semibold">Cómo conectar:</span> El operador debe ejecutar{" "}
+              <code className="text-blue-400 bg-slate-800 px-1 rounded">./scripts/start.sh</code> y luego{" "}
+              <code className="text-blue-400 bg-slate-800 px-1 rounded">./scripts/start_remote.sh</code>{" "}
+              para generar la URL de Ngrok. También se puede pre-configurar con{" "}
+              <code className="text-blue-400 bg-slate-800 px-1 rounded">?mqtt=wss://...</code> en la URL.
             </p>
           </div>
         </div>
@@ -141,7 +157,7 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
     );
   }
 
-  // ── Small floating settings button (when already connected) ──
+  // ── Botón flotante (ya conectado) ──
   if (!showPanel) {
     return (
       <button
@@ -158,7 +174,7 @@ export default function ConnectionSettings({ onConnect, currentConfig, connectio
     );
   }
 
-  // ── Floating panel (edit existing connection) ──
+  // ── Panel flotante (editar conexión existente) ──
   return (
     <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowPanel(false)}>
       <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
