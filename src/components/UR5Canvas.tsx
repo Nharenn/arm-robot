@@ -13,7 +13,7 @@ export default function UR5Canvas({ angles, theme }: UR5CanvasProps) {
 
   return (
     <div className={`w-full h-full relative rounded-xl overflow-hidden ${isDark ? 'bg-slate-900 shadow-inset-dark' : 'bg-slate-50 shadow-inner border border-slate-200'}`}>
-      <Canvas camera={{ position: [8, 5, 8], fov: 45 }}>
+      <Canvas camera={{ position: [10, 8, 12], fov: 55 }}>
         <color attach="background" args={[isDark ? '#0f172a' : '#f1f5f9']} />
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={1} castShadow />

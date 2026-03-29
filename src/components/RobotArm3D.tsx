@@ -23,12 +23,14 @@ export default function RobotArm3D({ angles, theme }: RobotArm3DProps) {
   useFrame((state, delta) => {
     const speed = 5 * delta;
     if (baseRef.current) baseRef.current.rotation.y = THREE.MathUtils.damp(baseRef.current.rotation.y, rads[0], speed, delta);
-    // UR5 J2 zero is usually pointing UP or horizontally. In standard D-H, J2=0 points horizontal, we adjust so it looks like Coppelia
-    if (shoulderRef.current) shoulderRef.current.rotation.z = THREE.MathUtils.damp(shoulderRef.current.rotation.z, rads[1], speed, delta);
-    if (elbowRef.current) elbowRef.current.rotation.z = THREE.MathUtils.damp(elbowRef.current.rotation.z, rads[2], speed, delta);
-    if (w1Ref.current) w1Ref.current.rotation.z = THREE.MathUtils.damp(w1Ref.current.rotation.z, rads[3], speed, delta);
-    if (w2Ref.current) w2Ref.current.rotation.y = THREE.MathUtils.damp(w2Ref.current.rotation.y, rads[4], speed, delta); // w2 rotates around its new axis
-    if (w3Ref.current) w3Ref.current.rotation.z = THREE.MathUtils.damp(w3Ref.current.rotation.z, rads[5], speed, delta);
+    
+    // Invertimos las rotaciones (-rads) porque el eje Z de Three.js (WebGL) está espejado respecto a CoppeliaSim
+    if (shoulderRef.current) shoulderRef.current.rotation.z = THREE.MathUtils.damp(shoulderRef.current.rotation.z, -rads[1], speed, delta);
+    if (elbowRef.current) elbowRef.current.rotation.z = THREE.MathUtils.damp(elbowRef.current.rotation.z, -rads[2], speed, delta);
+    if (w1Ref.current) w1Ref.current.rotation.z = THREE.MathUtils.damp(w1Ref.current.rotation.z, -rads[3], speed, delta);
+    
+    if (w2Ref.current) w2Ref.current.rotation.y = THREE.MathUtils.damp(w2Ref.current.rotation.y, -rads[4], speed, delta); 
+    if (w3Ref.current) w3Ref.current.rotation.z = THREE.MathUtils.damp(w3Ref.current.rotation.z, -rads[5], speed, delta);
   });
 
   // ── MATERIALS ──
