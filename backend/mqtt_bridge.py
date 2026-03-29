@@ -119,8 +119,6 @@ class UR5Bridge:
         self.running = True
         self.coppelia_connected = False
         self.mqtt_connected = False
-        # Solo enviar targets a CoppeliaSim cuando llegue un comando del frontend
-        self.pending_target_write = False
 
         # ── MQTT Client ──
         self.mqtt_client = mqtt.Client(
@@ -169,7 +167,6 @@ class UR5Bridge:
                         self.target_angles[key] = float(payload[key])
                 if "activeJoint" in payload:
                     self.active_joint = payload["activeJoint"]
-                self.pending_target_write = True  # marcar para enviar a CoppeliaSim
 
             elif msg.topic == TOPIC_CMD_GRIPPER:
                 self.gripper_closed = payload.get("closed", False)
@@ -422,10 +419,10 @@ class UR5Bridge:
                 else:
                     joints = self._demo_joints()
 
-                # ── Write targets a CoppeliaSim solo si llegó un comando nuevo ──
-                if self.coppelia_connected and self.pending_target_write:
+                # ── Write targets a CoppeliaSim cada ciclo para mantener posición ──
+                # CoppeliaSim en modo POSITION necesita el target continuamente
+                if self.coppelia_connected:
                     self.write_joint_targets()
-                    self.pending_target_write = False
 
                 # ── Compute PID for active joint ──
                 active_key = self.active_joint

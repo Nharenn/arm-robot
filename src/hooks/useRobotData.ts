@@ -66,11 +66,11 @@ export function useRobotData(activeJoint: keyof JointData, brokerUrl?: string) {
 
   const isConnected = connectionStatus === "connected";
 
-  // Resetear sync al desconectar para re-sincronizar en la próxima conexión
+  // Al desconectar, permitir re-sincronizar posición en la próxima conexión
+  // pero SOLO si el usuario nunca interactuó — así no perdemos su target
   useEffect(() => {
-    if (!isConnected) {
+    if (!isConnected && !userInteractedRef.current) {
       syncedOnConnectRef.current = false;
-      userInteractedRef.current = false;
     }
   }, [isConnected]);
 
