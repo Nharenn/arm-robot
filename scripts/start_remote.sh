@@ -55,10 +55,6 @@ NGROK_CONFIG="/tmp/ur5_ngrok.yml"
 cat > "$NGROK_CONFIG" << 'EOF'
 version: "2"
 tunnels:
-  frontend:
-    proto: http
-    addr: 5173
-    inspect: false
   mqtt-ws:
     proto: http
     addr: 9001
@@ -72,8 +68,20 @@ EOF
 echo -e "${GREEN}Starting Ngrok tunnels...${NC}"
 echo ""
 
-# Start ngrok with all tunnels
-ngrok start --config "$NGROK_CONFIG" --all &
+# Detectar config por defecto de ngrok (donde está guardado el authtoken)
+DEFAULT_NGROK_CFG=""
+if [ -f "$HOME/.config/ngrok/ngrok.yml" ]; then
+    DEFAULT_NGROK_CFG="$HOME/.config/ngrok/ngrok.yml"
+elif [ -f "$HOME/Library/Application Support/ngrok/ngrok.yml" ]; then
+    DEFAULT_NGROK_CFG="$HOME/Library/Application Support/ngrok/ngrok.yml"
+fi
+
+# Pasar ambos configs: el default (authtoken) + el custom (tunnels)
+if [ -n "$DEFAULT_NGROK_CFG" ]; then
+    ngrok start --config "$DEFAULT_NGROK_CFG" --config "$NGROK_CONFIG" --all &
+else
+    ngrok start --config "$NGROK_CONFIG" --all &
+fi
 PIDS+=($!)
 
 sleep 3
