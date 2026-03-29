@@ -113,10 +113,6 @@ class UR5Bridge:
         self.target_angles: Dict[str, float] = {
             "J1": 0, "J2": 0, "J3": 0, "J4": 0, "J5": 0, "J6": 0
         }
-        # Posición interpolada actual — se mueve gradualmente hacia target_angles
-        self.interp_angles: Dict[str, float] = {
-            "J1": 0, "J2": 0, "J3": 0, "J4": 0, "J5": 0, "J6": 0
-        }
         self.gripper_closed = False
         self.pid = PIDController()
         self.active_joint = "J2"
@@ -225,7 +221,6 @@ class UR5Bridge:
                 initial = self.read_joint_positions()
                 if initial:
                     self.target_angles.update(initial)
-                    self.interp_angles.update(initial)
                     print(f"✅ CoppeliaSim: Initial targets synced to current position")
                 self._publish_status()
                 return True
@@ -335,22 +330,13 @@ class UR5Bridge:
             return {}
 
     def write_joint_targets(self):
-        """Mueve los joints gradualmente hacia target — evita oscilación por saltos bruscos."""
+        """Envía los targets directamente a CoppeliaSim — su controlador interno maneja el movimiento."""
         if not self.coppelia_connected or not self.joint_handles:
             return
         try:
             keys = ["J1", "J2", "J3", "J4", "J5", "J6"]
-            max_step = 2.0  # grados por ciclo (2° * 20Hz = 40°/s máximo)
             for i, handle in enumerate(self.joint_handles):
-                key = keys[i]
-                target = self.target_angles[key]
-                current_interp = self.interp_angles[key]
-                diff = target - current_interp
-                if abs(diff) <= max_step:
-                    self.interp_angles[key] = target
-                else:
-                    self.interp_angles[key] = current_interp + math.copysign(max_step, diff)
-                self.sim.setJointTargetPosition(handle, math.radians(self.interp_angles[key]))
+                self.sim.setJointTargetPosition(handle, math.radians(self.target_angles[keys[i]]))
         except Exception as e:
             print(f"⚠️  CoppeliaSim: Error writing joints — {e}")
             self.coppelia_connected = False
