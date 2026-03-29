@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-UR5 MQTT ↔ CoppeliaSim Bridge — Direct Kinematic Control
-Usa setJointPosition (cinemático) en vez de setJointTargetPosition (dinámico/PID)
-para evitar oscilaciones del controlador interno de CoppeliaSim.
+UR5 MQTT ↔ CoppeliaSim Bridge
+[React] ──WS:9001──▸ [Mosquitto] ──TCP:1883──▸ [Bridge] ──ZMQ:23000──▸ [CoppeliaSim]
 """
 
 import json, time, math, threading, signal, sys, os, random
@@ -27,19 +26,31 @@ TOPIC_STATUS        = "ur5/status"
 
 KEYS = ["J1", "J2", "J3", "J4", "J5", "J6"]
 
+UR5_JOINT_NAMES = [
+    "/UR5/joint",
+    "/UR5/link/joint",
+    "/UR5/link/joint/link/joint",
+    "/UR5/link/joint/link/joint/link/joint",
+    "/UR5/link/joint/link/joint/link/joint/link/joint",
+    "/UR5/joint/link/joint/link/joint/link/joint/link/joint/link/joint",
+]
+UR5_JOINT_NAMES_ALT = [
+    "/UR5_joint1", "/UR5_joint2", "/UR5_joint3",
+    "/UR5_joint4", "/UR5_joint5", "/UR5_joint6",
+]
+
 
 class UR5Bridge:
 
     def __init__(self):
-        self.sim            = None
-        self.handles        = []
-        self._lock          = threading.Lock()
-        self.targets        = {k: 0.0 for k in KEYS}   # ángulos en grados
-        self.current        = {k: 0.0 for k in KEYS}   # posición actual leída
-        self.active_joint   = "J2"
-        self.running        = True
-        self.coppelia_ok    = False
-        self.mqtt_ok        = False
+        self.sim         = None
+        self.handles     = []
+        self._lock       = threading.Lock()
+        self.targets     = {k: 0.0 for k in KEYS}
+        self.active      = "J2"
+        self.running     = True
+        self.cop_ok      = False
+        self.mqtt_ok     = False
 
         self.client = mqtt.Client(
             client_id="ur5_bridge",
@@ -51,7 +62,7 @@ class UR5Bridge:
         self.client.will_set(TOPIC_STATUS,
             json.dumps({"connected": False, "coppelia": False}), qos=1, retain=True)
 
-    # ── MQTT ──────────────────────────────────────────────────────────────
+    # ── MQTT ──────────────────────────────────────────────────────────
 
     def _on_connect(self, client, *_):
         self.mqtt_ok = True
@@ -71,72 +82,53 @@ class UR5Bridge:
                         if k in p:
                             self.targets[k] = float(p[k])
                     if "activeJoint" in p:
-                        self.active_joint = p["activeJoint"]
+                        self.active = p["activeJoint"]
         except Exception:
             pass
 
-    # ── CoppeliaSim ───────────────────────────────────────────────────────
+    # ── CoppeliaSim ───────────────────────────────────────────────────
 
     def connect_coppelia(self) -> bool:
         try:
             from coppeliasim_zmqremoteapi_client import RemoteAPIClient
             print(f"🔗 Conectando a CoppeliaSim {COPPELIA_HOST}:{COPPELIA_PORT}...")
             self.sim = RemoteAPIClient(host=COPPELIA_HOST, port=COPPELIA_PORT).require("sim")
-
-            # Buscar joints
             self.handles = self._find_joints()
+
             if len(self.handles) != 6:
-                print(f"⚠️  Encontré {len(self.handles)} joints (se necesitan 6) → DEMO MODE")
+                print(f"⚠️  {len(self.handles)} joints encontrados (se necesitan 6) → DEMO")
                 return False
 
-            # ── CLAVE: poner joints en modo CINEMÁTICO (no dinámico) ──
-            # Esto desactiva el PID interno de CoppeliaSim y permite control directo
-            for h in self.handles:
-                try:
-                    self.sim.setObjectInt32Param(
-                        h,
-                        self.sim.jointintparam_dynctrlmode,
-                        self.sim.jointdynctrl_free   # modo libre / cinemático
-                    )
-                except Exception:
-                    pass
-
-            # Leer posición actual como punto de partida
+            # Leer posición actual y usarla como targets iniciales
+            # Esto evita que el robot snapee a 0° al arrancar
             pos = self._read()
             if pos:
                 with self._lock:
                     self.targets.update(pos)
-                self.current.update(pos)
+                print(f"✅ Posición inicial sincronizada: {pos}")
 
-            self.coppelia_ok = True
+            self.cop_ok = True
             self._pub_status()
-            print("✅ CoppeliaSim conectado — modo CINEMÁTICO (sin PID interno)")
+            print("✅ CoppeliaSim conectado")
             return True
 
         except ImportError:
-            print("❌ Instala: pip install coppeliasim-zmqremoteapi-client")
+            print("❌ pip install coppeliasim-zmqremoteapi-client")
             return False
         except Exception as e:
-            print(f"❌ CoppeliaSim: {e} → DEMO MODE")
+            print(f"❌ CoppeliaSim error: {e} → DEMO")
             return False
 
     def _find_joints(self) -> list:
-        naming_variants = [
-            ["/UR5/joint", "/UR5/link/joint", "/UR5/link/joint/link/joint",
-             "/UR5/link/joint/link/joint/link/joint",
-             "/UR5/link/joint/link/joint/link/joint/link/joint",
-             "/UR5/joint/link/joint/link/joint/link/joint/link/joint/link/joint"],
-            [f"/UR5_joint{i}" for i in range(1, 7)],
-        ]
-        for names in naming_variants:
+        for names in [UR5_JOINT_NAMES, UR5_JOINT_NAMES_ALT]:
             try:
                 h = [self.sim.getObject(n) for n in names]
                 if len(h) == 6:
-                    print(f"✅ Joints encontrados: {names[0]}...")
+                    print(f"✅ Joints: {names[0]}...")
                     return h
             except Exception:
                 pass
-        # Auto-descubrimiento
+        # Auto-discover
         found, idx = [], 0
         while True:
             try:
@@ -147,49 +139,50 @@ class UR5Bridge:
                 break
         if len(found) >= 6:
             found.sort(key=lambda h: self.sim.getObjectAlias(h, 1))
-            print(f"✅ Joints auto-descubiertos ({len(found)} encontrados)")
+            print(f"✅ Joints auto-descubiertos ({len(found)} total)")
             return found[:6]
         return []
 
     def _read(self) -> Dict[str, float]:
-        """Lee posición actual de CoppeliaSim en grados."""
         try:
             return {KEYS[i]: round(math.degrees(self.sim.getJointPosition(h)), 2)
                     for i, h in enumerate(self.handles)}
         except Exception:
-            self.coppelia_ok = False
+            self.cop_ok = False
             self._pub_status()
             return {}
 
     def _write(self, targets: Dict[str, float]):
-        """Escribe posición DIRECTAMENTE (cinemático) — sin PID, sin oscilación."""
+        """setJointTargetPosition — método correcto para control dinámico en CoppeliaSim."""
         try:
             for i, h in enumerate(self.handles):
-                # setJointPosition = control directo, instantáneo, sin dinámica
-                self.sim.setJointPosition(h, math.radians(targets[KEYS[i]]))
+                self.sim.setJointTargetPosition(h, math.radians(targets[KEYS[i]]))
         except Exception as e:
-            print(f"⚠️  Write: {e}")
-            self.coppelia_ok = False
+            print(f"⚠️  Write error: {e}")
+            self.cop_ok = False
             self._pub_status()
 
-    # ── Demo mode ─────────────────────────────────────────────────────────
+    # ── Demo ──────────────────────────────────────────────────────────
 
-    def _demo_step(self, targets: Dict[str, float]) -> Dict[str, float]:
+    _demo_pos = {k: 0.0 for k in KEYS}
+
+    def _demo_step(self, targets):
         for k in KEYS:
-            self.current[k] = round(
-                self.current[k] + 0.2 * (targets[k] - self.current[k]), 2)
-        return dict(self.current)
+            self._demo_pos[k] = round(
+                self._demo_pos[k] + 0.2 * (targets[k] - self._demo_pos[k]), 2)
+        return dict(self._demo_pos)
 
-    # ── Status ────────────────────────────────────────────────────────────
+    # ── Status ────────────────────────────────────────────────────────
 
     def _pub_status(self):
         self.client.publish(TOPIC_STATUS, json.dumps({
             "connected": self.mqtt_ok,
-            "coppelia":  self.coppelia_ok,
-            "mode": "live" if self.coppelia_ok else "demo",
+            "coppelia":  self.cop_ok,
+            "mode": "live" if self.cop_ok else "demo",
+            "timestamp": time.time(),
         }), qos=1, retain=True)
 
-    # ── Main loop ─────────────────────────────────────────────────────────
+    # ── Main loop ─────────────────────────────────────────────────────
 
     def run(self):
         print("╔══════════════════════════════════════╗")
@@ -204,54 +197,54 @@ class UR5Bridge:
 
         time.sleep(1)
         self.connect_coppelia()
-        if not self.coppelia_ok:
-            print("ℹ️  DEMO MODE activo")
+        if not self.cop_ok:
+            print("ℹ️  DEMO MODE — conecta CoppeliaSim y reinicia el bridge")
 
-        dt = 0.05
-        print(f"🚀 Bridge corriendo a {int(1/dt)} Hz\n")
+        dt = 0.05  # 20 Hz — coincide con timestep de CoppeliaSim (50ms)
+        print(f"🚀 Bridge a {int(1/dt)} Hz\n")
 
         try:
             while self.running:
                 t0 = time.time()
 
+                # Snapshot thread-safe de targets
                 with self._lock:
                     targets = dict(self.targets)
-                    active  = self.active_joint
+                    active  = self.active
 
-                if self.coppelia_ok:
-                    # ESCRIBIR target directamente (cinemático)
+                if self.cop_ok:
+                    # 1. Escribir targets a CoppeliaSim
                     self._write(targets)
-                    # LEER posición actual para el frontend
+                    # 2. Leer posición actual
                     joints = self._read()
                     if not joints:
                         joints = self._demo_step(targets)
                 else:
                     joints = self._demo_step(targets)
 
-                # PID solo para visualización (no controla el robot)
-                measured = joints.get(active, 0)
-                target_a = targets.get(active, 0)
-                error    = target_a - measured
-                pid_data = {
-                    "setpoint": round(target_a, 2),
-                    "error":    round(error, 2),
+                # PID (solo visual — CoppeliaSim tiene su propio controlador)
+                measured = joints.get(active, 0.0)
+                target_v = targets.get(active, 0.0)
+                error    = round(target_v - measured, 2)
+                pid_out  = {
+                    "setpoint": round(target_v, 2),
+                    "error":    error,
                     "output":   round(error * 1.0, 2),
                     "p": round(error * 1.0, 2),
-                    "i": 0.0,
-                    "d": 0.0,
+                    "i": 0.0, "d": 0.0,
                 }
 
                 sensors = {
-                    "temp":  round(28 + random.uniform(-0.1, 0.1), 1),
-                    "force": round(max(0, abs(error) * 0.1), 1),
+                    "temp":  round(28.0 + random.uniform(-0.5, 0.5), 1),
+                    "force": round(max(0.0, abs(error) * 0.05), 1),
                 }
 
                 if self.mqtt_ok:
-                    self.client.publish(TOPIC_STATE_JOINTS,  json.dumps(joints),   qos=0)
-                    self.client.publish(TOPIC_STATE_PID,     json.dumps(pid_data), qos=0)
-                    self.client.publish(TOPIC_STATE_SENSORS, json.dumps(sensors),  qos=0)
+                    self.client.publish(TOPIC_STATE_JOINTS,  json.dumps(joints),  qos=0)
+                    self.client.publish(TOPIC_STATE_PID,     json.dumps(pid_out), qos=0)
+                    self.client.publish(TOPIC_STATE_SENSORS, json.dumps(sensors), qos=0)
 
-                time.sleep(max(0, dt - (time.time() - t0)))
+                time.sleep(max(0.0, dt - (time.time() - t0)))
 
         except KeyboardInterrupt:
             print("\n🛑 Parando...")
