@@ -128,11 +128,14 @@ for t in data.get('tunnels', []):
         break
 " 2>/dev/null || echo "check http://localhost:4040")
 
-    # Generar link de Vercel con ?mqtt= pre-configurado
-    VERCEL_APP="https://arm-robotic-iud.vercel.app"
-    VERCEL_LINK="${VERCEL_APP}?mqtt=${MQTT_URL}"
+    # Convertir https:// → wss:// para WebSocket MQTT
+    MQTT_WSS=$(echo "$MQTT_URL" | sed 's|https://|wss://|' | sed 's|http://|ws://|')
 
-    echo -e "${CYAN}║  MQTT WS (ngrok): ${GREEN}${MQTT_URL}${NC}"
+    # Generar link de Vercel con ?mqtt= pre-configurado
+    VERCEL_APP="https://arm-robot-pi.vercel.app"
+    VERCEL_LINK="${VERCEL_APP}?mqtt=${MQTT_WSS}"
+
+    echo -e "${CYAN}║  MQTT WS (ngrok): ${GREEN}${MQTT_WSS}${NC}"
     echo -e "${CYAN}║  Video Stream:    ${GREEN}${STREAM_URL}${NC}"
     echo -e "${CYAN}║  Ngrok Dashboard: ${BLUE}http://localhost:4040${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"

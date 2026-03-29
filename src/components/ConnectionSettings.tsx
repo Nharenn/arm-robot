@@ -20,10 +20,15 @@ const VITE_MQTT_URL = import.meta.env.VITE_MQTT_URL || "";
 // ── Defaults ──
 const DEFAULT_MQTT = isLocalhost ? `ws://localhost:9001` : "";
 
-// ── Fuerza wss:// si la página está en HTTPS para evitar mixed-content ──
+// ── Normaliza la URL a wss:// para MQTT sobre WebSocket ──
 function normalizeWsUrl(url: string): string {
   if (!url) return url;
+  // https:// → wss://  |  http:// → ws://
+  if (url.startsWith("https://")) return url.replace("https://", "wss://");
+  if (url.startsWith("http://"))  return url.replace("http://",  "ws://");
+  // Sin protocolo → añadir wss://
   if (!url.startsWith("ws")) return `wss://${url}`;
+  // ws:// en página HTTPS → subir a wss://
   if (isHttps && url.startsWith("ws://")) return url.replace("ws://", "wss://");
   return url;
 }
